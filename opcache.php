@@ -1,4 +1,17 @@
 <?php
+/**
+ * OPcache Status
+ *
+ * A one-page opcache status page for the PHP opcode cache.
+ * https://github.com/wp-cloud/opcache-status
+ *
+ * @package OpCacheStatus
+ * @version 0.2.0
+ * @author WP-Cloud <code@wp-cloud.net>
+ * @copyright Copyright (c) 2016, WP-Cloud
+ * @copyright Copyright (c) -2016, Rasmus Lerdorf
+ * @license @todo
+ */
 
 define('THOUSAND_SEPARATOR',true);
 
@@ -474,9 +487,15 @@ $dataModel = new OpCacheDataModel();
         label {
             cursor: pointer;
         }
+
+        .actions {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #cacaca;
+        }
     </style>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/d3/3.0.1/d3.v3.min.js"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+    <script src="inc/d3-3.0.1.min.js"></script>
+    <script src="inc/jquery-1.11.0.min.js"></script>
     <script>
         var hidden = {};
         function toggleVisible(head, row) {
@@ -618,16 +637,16 @@ $dataModel = new OpCacheDataModel();
         }
 
         function change() {
-            // Filter out any zero values to see if there is anything left
-            var remove_zero_values = dataset[this.value].filter(function(value) {
-                return value > 0;
-            });
-
             // Skip if the value is undefined for some reason
-            if (typeof dataset[this.value] !== 'undefined' && remove_zero_values.length > 0) {
-                $('#graph').find('> svg').show();
-                path = path.data(pie(dataset[this.value])); // update the data
-                path.transition().duration(750).attrTween("d", arcTween); // redraw the arcs
+            if (typeof dataset[this.value] !== 'undefined') {
+                // Filter out any zero values to see if there is anything left
+                var remove_zero_values = dataset[this.value].filter(function(value) {
+                    return value > 0;
+                });
+                if (remove_zero_values.length > 0) {
+                    $('#graph').find('> svg').show();
+                    path = path.data(pie(dataset[this.value])); // update the data
+                    path.transition().duration(750).attrTween("d", arcTween); // redraw the arcs
             // Hide the graph if we can't draw it correctly, not ideal but this works
             } else {
                 $('#graph').find('> svg').hide();
