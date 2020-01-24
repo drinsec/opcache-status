@@ -8,6 +8,7 @@
  * @package OpCacheStatus
  * @version 0.2.1
  * @author WP-Cloud <code@wp-cloud.net>
+ * @author Pedro Carvalho <p@goodomens.studio>
  * @copyright Copyright (c) 2016, WP-Cloud
  * @copyright Copyright (c) -2016, Rasmus Lerdorf
  * @license @todo
@@ -26,7 +27,7 @@ class OpCacheDataModel
     private $_status;
     private $_d3Scripts = array();
 
-    public $version = '0.2.0';
+    public $version = '0.2.1';
 
     public function __construct()
     {
