@@ -569,7 +569,7 @@ if (isset($_GET['clear']) && $_GET['clear'] == 1) {
 
             <div class="tab">
                 <input type="radio" id="tab-scripts" name="tab-group-1">
-                <label for="tab-scripts">Scripts (<?php echo $dataModel->getScriptStatusCount(); ?>)</label>
+                <label for="tab-scripts">Files (<?php echo $dataModel->getScriptStatusCount(); ?>)</label>
                 <div class="content">
                     <table style="font-size:0.8em;">
                         <tr>
