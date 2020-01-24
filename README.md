@@ -6,7 +6,7 @@ You don't need the opcode cache installed to help out with this.
 See the data-sample.php file for a dump of the data.
 
 
-[![Screenshot](https://raw.githubusercontent.com/jamesrwhite/opcache-status/improve-readme/screenshot.png)](https://raw.githubusercontent.com/jamesrwhite/opcache-status/improve-readme/screenshot.png)
+![Screenshot](screenshot.png)
 
 ## Change log
 
