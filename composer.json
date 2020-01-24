@@ -1,14 +1,31 @@
 {
-    "name": "rlerdorf/opcache-status",
+    "name": "lc43/opcache-status",
+    "type": "application",
     "description": "A one-page opcache status page",
+    "keywords": ["opcache","cache","debug","debugging"],
+    "homepage": "https://github.com/lc43/opcache-status",
     "license": "PHP-3.0",
     "authors": [
         {
-            "name": "The contributors",
+            "name": "The contributors of rlerdorf/opcache-status",
             "homepage": "https://github.com/rlerdorf/opcache-status/graphs/contributors"
+        },
+        {
+            "name": "Christian Foellmann",
+            "email": "foellmann@foe-services.de",
+            "homepage": "http://christian.foellmann.de/"
+        },
+        {
+            "name": "Pedro Carvalho",
+            "email": "p@goodomens.studio",
+            "homepage": "https://goodomens.studio/"
         }
     ],
+    "support": {
+        "issues": "https://github.com/lc43/opcache-status/issues",
+        "source": "https://github.com/lc43/opcache-status"
+    },
     "require": {
-        "PHP": ">=5.5.0"
+        "PHP": ">=7.2.0"
     }
 }
