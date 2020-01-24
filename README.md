@@ -10,12 +10,14 @@ See the data-sample.php file for a dump of the data.
 
 ## Change log
 
+### v0.2.1
+- Improve flush cache
+
 ### v0.2.0
 
 - Fixed warnings when opcache was off
 - Improve clear cache feedback
 - Changed label from Scripts to Files
-
 
 ### TODO
 

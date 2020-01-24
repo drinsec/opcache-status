@@ -6,7 +6,7 @@
  * https://github.com/wp-cloud/opcache-status
  *
  * @package OpCacheStatus
- * @version 0.2.0
+ * @version 0.2.1
  * @author WP-Cloud <code@wp-cloud.net>
  * @copyright Copyright (c) 2016, WP-Cloud
  * @copyright Copyright (c) -2016, Rasmus Lerdorf
@@ -32,12 +32,15 @@ class OpCacheDataModel
     {
         $this->_configuration = opcache_get_configuration();
         $this->_status = opcache_get_status() ?: [];
+        $this->handleFlush();
     }
 
     public function getPageTitle()
     {
         return 'PHP ' . phpversion() . " with OpCache {$this->_configuration['version']['version']}";
     }
+
+
 
     public function getStatusDataRows()
     {
@@ -314,30 +317,68 @@ class OpCacheDataModel
         return $array;
     }
 
-    public function clearCache() {
+    private function flushCache() {
+        if ( ! function_exists('opcache_reset') ) {
+            return;
+        }
         return (int) opcache_reset();
     }
 
-    public function clearCacheStatus() {
+    /**
+     * Check if flush was properly done and present it
+     */
+    public function getFlushCacheStatus() {
+        $status_msg = '(failed)';
+        if ( ! isset( $_GET['flush_status'] ) ) {
+            return '';
+        }
+        if ( $_GET['flush_status'] == 1) {
+            $status_msg = '(success)';
+        }
+        printf( '<p class="clear_cache__status" title="Status of the flush done here.">%1$s</p>', $status_msg );
+    }
 
-        if ( ! isset( $_GET['reset_status'] ) ) {
+
+    /**
+     * Get last flush and present in a human readble way
+     */
+    public function getFlushTimeAgo() : string {
+
+        $stats = opcache_get_status( false );
+        if ( empty( $stats['opcache_statistics']['last_restart_time'] ) ){
+            return '';
+        }
+        $timeago_dt = new \DateTime('@' . $stats['opcache_statistics']['last_restart_time'] );
+
+        $now = new DateTime();
+        $interval = $timeago_dt->diff( $now, true );
+        $reset_ago = '<p class="clear_cache__timeago">Last reset was ';
+        $reset_ago_end = '</p>';
+        if ( $interval->y ) { return $reset_ago . $interval->y . ' years ago.' . $reset_ago_end; };
+        if ( $interval->m ) { return $reset_ago . $interval->m . ' months ago.' . $reset_ago_end; };
+        if ( $interval->d ) { return $reset_ago . $interval->d . ' days ago.' . $reset_ago_end; };
+        if ( $interval->h ) { return $reset_ago . $interval->h . ' hours ago.' . $reset_ago_end; };
+        if ( $interval->i ) { return $reset_ago . $interval->i . ' minutes ago.' . $reset_ago_end; };
+        return $reset_ago . ' less than 1 minute ago.' . $reset_ago_end;
+    }
+
+    /**
+     * Flush OpCache and redicted when Action is set to flush.
+     */
+    private function handleFlush() {
+        if ( empty( $_POST['action'] ) ) {
             return;
         }
-        if ( $_GET['reset_status'] == 1) {
-            echo '(success)';
-            return;
+        if ( $_POST['action'] === 'flush' && ! empty( $_SERVER['PHP_SELF'] ) ) {
+            $flush_status = $this->flushCache();
+            header( 'Location: ' . $_SERVER['PHP_SELF'] . '?flush_status=' . $flush_status );
         }
-        echo "(failed)";
     }
 
 }
 
 $dataModel = new OpCacheDataModel();
 
-if (isset($_GET['clear']) && $_GET['clear'] == 1) {
-    $reset_status = $dataModel->clearCache();
-    header('Location: ' . $_SERVER['PHP_SELF'] . '?reset_status=' . $reset_status );
-}
 ?>
 <!DOCTYPE html>
 <meta charset="utf-8">
@@ -516,6 +557,15 @@ if (isset($_GET['clear']) && $_GET['clear'] == 1) {
             padding: 10px;
             border: 1px solid #cacaca;
         }
+        .clear_cache__status {
+            font-weight: 100;
+            text-decoration: underline dotted blue;
+        }
+        .clear_cache__timeago {
+            font-weight: 100;
+            font-style: italic;
+        }
+
     </style>
     <script src="inc/d3-3.0.1.min.js"></script>
     <script src="inc/jquery-1.11.0.min.js"></script>
@@ -540,10 +590,6 @@ if (isset($_GET['clear']) && $_GET['clear'] == 1) {
     <div id="container">
         <span style="float:right;font-size:small;">OPcache Status v<?php echo $dataModel->version; ?></span>
         <h1><?php echo $dataModel->getPageTitle(); ?></h1>
-
-        <div class="actions">
-            <a href="?clear=1">Clear cache</a> <span><?php echo $dataModel->clearCacheStatus(); ?></span>
-        </div>
 
         <div class="tabs">
 
@@ -586,6 +632,27 @@ if (isset($_GET['clear']) && $_GET['clear'] == 1) {
                 <input type="radio" id="tab-visualise" name="tab-group-1">
                 <label for="tab-visualise">Visualise Partition</label>
                 <div class="content"></div>
+            </div>
+
+            <div class="tab">
+                <input type="radio" id="tab-utilities" name="tab-group-1">
+                <label for="tab-utilities">Utilities</label>
+                <div class="content">
+                    <table>
+                        <tr>
+                            <th>Flush cache
+                                <?php echo $dataModel->getFlushCacheStatus(); ?>
+                                <?php echo $dataModel->getFlushTimeAgo(); ?>
+                            </th>
+                            <td>
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="flush" />
+                                    <button name="submit" type="submit">Flush</button>
+                                </form>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
             </div>
 
         </div>
