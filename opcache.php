@@ -428,12 +428,14 @@ $dataModel = new OpCacheDataModel();
 		:root {
 			--color-background: #f9f9f9;
 			--color-background-accent: #eee;
+			--color-background-accent2: #ddd;
 			--color-default: #000;
 		}
 
 		[data-theme="dark"] {
-			--color-background: #334;
-			--color-background-accent: #555;
+			--color-background: #202124;
+			--color-background-accent: #303134;
+			--color-background-accent2: #505164;
 			--color-default: #eee;
 		}
 
@@ -447,7 +449,7 @@ $dataModel = new OpCacheDataModel();
         }
 
         #container {
-            width: 1024px;
+            width: 90%;
             margin: auto;
             position: relative;
         }
@@ -471,7 +473,13 @@ $dataModel = new OpCacheDataModel();
         .tabs {
             position: relative;
             float: left;
-            width: 60%;
+		    width: -webkit-calc(100% - 420px);
+		    width:    -moz-calc(100% - 420px);
+		    width:         calc(100% - 420px);
+        }
+
+        .graph {
+            width: 400px;
         }
 
         .tab {
@@ -519,11 +527,19 @@ $dataModel = new OpCacheDataModel();
         }
 
 		.head_expanded {
-            color: #ddd;
+            color: #aaa;
 		}
 
         .clickable {
             cursor: pointer;
+            background: var(--color-background-accent2);
+        }
+
+        .files_header {
+            cursor: pointer;
+            position:sticky;
+            top:0;
+            background: var(--color-background);
         }
 
         .invalidate {
@@ -638,7 +654,7 @@ $dataModel = new OpCacheDataModel();
         var hidden = {};
         function toggleVisible(head, row) {
         	var hide = hidden[row] = !hidden[row];
-        	d3.select(head).classed('head_expanded', hide);
+        	d3.selectAll(head).classed('head_expanded', hide);
         	d3.selectAll(row).transition().style('display', hide ? 'none' : null);
         }
 
@@ -689,12 +705,13 @@ $dataModel = new OpCacheDataModel();
                 <label for="tab-scripts">Files</label>
                 <div class="content">
                     <table style="font-size:0.8em;">
-                        <tr>
-                            <th width="10%">Hits</th>
-                            <th width="20%">Memory</th>
-                            <th width="70%">Path</th>
+                        <thead class='files_header'><tr>
+                            <th onclick="renderFilesTab(this)" order="1" width="100"><nobr>Hits <span style="visibility:hidden">█</span></nobr></th>
+                            <th onclick="renderFilesTab(this)" order="2" width="100"><nobr>Memory <span style="visibility:hidden">█</span></nobr></th>
+                            <th onclick="renderFilesTab(this)" order="3" width="100%"><nobr>Path <span style="visibility:hidden">█</span></nobr></th>
                             <th width="32">-</th>
-                        </tr>
+                        </tr></thead>
+                        <tbody></tbody>
                     </table>
                 </div>
             </div>
@@ -920,40 +937,121 @@ $dataModel = new OpCacheDataModel();
 			return b + " bytes";
 		}
 
-        $(document).ready(function() {
-        	var files_tab = $('#tab-files');
-        	var files_table = files_tab.find('TABLE TBODY');
-        	var files_label = files_tab.find('LABEL')
-        	var dirId = 0, sum_files = 0;
+		const files_tab = $('#tab-files');
+		const files_table = files_tab.find('TABLE TBODY');
+		const files_label = files_tab.find('LABEL');
+
+		function __renderFilesGrp(files, dir = false, dirId = -1) {
+			var tr = dirId === -1 ? '<tr>' : '<tr id="row-' + dirId + '">';
+        	for (var f of files) {
+        		var file = f[0], hits = f[1], size = f[2];
+        		var fullPath = dir ? dir + "/" + file : file;
+        		files_table.append($(tr)
+        				.append($('<td><nobr>' + hits.toLocaleString() + '</nobr></td>'))
+        				.append($('<td><nobr>' + fmtSize(size) + '</nobr></td>'))
+        				.append($('<td><nobr>' + (dirId === -1 ? fullPath : file) + '</nobr></td>'))
+        				.append($("<td class='invalidate' onclick=\"invalidate('" + fullPath + "')\"></td>"))
+				);
+        	}
+		}
+
+		function renderFilesTab(e = null) {
+			var OrderBy = null;
+        	if(e !== null) {
+        		var $e = $(e);
+        		var $eSPAN = $e.find("SPAN");
+        		var $eVis = $eSPAN.css('visibility') == 'visible';
+        		var OrderBy = parseInt( $e.attr('order') );
+
+        		$e.parent().find("[order]").each(function() {
+        			var $this = $(this);
+        			var $SPAN = $this.find("SPAN");
+        			var o = parseInt($this.attr('order'));
+        			if(o < 0) {
+        				o = -o;
+        				$this.attr('order', o)
+        			}
+        			$SPAN.css('visibility','hidden');
+        		});
+        		
+        		if($eVis && OrderBy > 0) {
+        			OrderBy = null; //reset sorting
+        		} else {
+	        		var sign = 1;
+	        		var signChar = "▼";
+	        		var neg = -OrderBy;
+	        		if(OrderBy < 0) {
+	        			sign = -1;
+	        			signChar = "▲";
+	        			OrderBy = -OrderBy;
+	        		}
+	        		$eSPAN.text(signChar);
+	        		$eSPAN.css('visibility','visible');
+	        		$e.attr('order', neg);
+
+		        	switch (OrderBy) {
+		        		case 1:
+		        			OrderBy = (a, b) => sign * (b[1] - a[1]);
+		        			break;
+		        		case 2:
+		        			OrderBy = sortfn = (a, b) => sign * (b[2] - a[2]);
+		        			break;
+		        		case 3:
+		        			OrderBy = (a, b) => sign * a[0].localeCompare(b[0]);
+		        			break;
+		        		default:
+		        			OrderBy = null;
+		        			break;
+		        	}
+        		}
+	        }
+
+        	if(OrderBy === null) {
+        		var dirId = 0, result = 0;
+        	} else {
+        		var ordered = [];
+        	}
+
+        	files_table.html('');
         	for (var e of dirs) {
         		var dir_sz = 0;
         		var dir = e[0];
         		var cnt = e[1].length;
-        		sum_files += cnt;
-        		
-        		for (var f of e[1]) dir_sz += f[2];
-        		if(cnt > 1) {
-        			var th = "<th class='clickable' id='head-" + dirId + "' onclick=\"toggleVisible('#head-" + dirId + "', '#row-" + dirId + "')\"><nobr>";
-        			files_table.append($('<tr>')
-        					.append($(th + " [ " + cnt.toLocaleString() + " files ] " + '</nobr></th>'))
-        					.append($(th + fmtSize(dir_sz) + '</nobr></th>'))
-        					.append($(th + dir + '</nobr></th>'))
-        					.append($("<th class='invalidate' onclick=\"invalidate('" + fullPath + "')\"></th>"))
-					);
-        		}
-        		for (var f of e[1]) {
-        			var file = f[0], hits = f[1], size = f[2];
-        			var fullPath = dir + "/" + file;
-        			files_table.append($('<tr id="row-' + dirId + '">')
-        					.append($('<td>' + hits.toLocaleString() + '</td>'))
-        					.append($('<td>' + fmtSize(size) + '</td>'))
-        					.append($('<td>' + (cnt > 1 ? file : fullPath) + '</td>'))
-        					.append($("<td class='invalidate' onclick=\"invalidate('" + fullPath + "')\"></td>"))
-					);
-        		}
-        		dirId++;
+
+				if(OrderBy === null) {
+        			result += cnt;
+	        		for (var f of e[1]) dir_sz += f[2];
+
+					//var dir_grp = (cnt > 1) && (OrderBy === null);
+	        		if(cnt > 1) {
+	        			var th = "<th class='clickable' id='head-" + dirId + "' onclick=\"toggleVisible('#head-" + dirId + "', '#row-" + dirId + "')\"><nobr>";
+	        			files_table.append($('<tr>')
+	        					.append($(th + " [ " + cnt.toLocaleString() + " files ] " + '</nobr></th>'))
+	        					.append($(th + fmtSize(dir_sz) + '</nobr></th>'))
+	        					.append($(th + dir + '</nobr></th>'))
+	        					.append($("<th class='invalidate' onclick=\"invalidate('" + dir + "/')\"></th>"))
+						);
+	        			__renderFilesGrp(e[1], dir, dirId++);
+	        		} else {
+	        			__renderFilesGrp(e[1], dir);
+	        		}
+				} else {
+					for (var f of e[1]) {
+						ordered.push( [ dir + "/" + f[0], f[1], f[2] ] );
+					}
+				}
         	}
-        	files_label.text( files_label.text() + " " + sum_files );
+
+			
+        	if(OrderBy === null) return result;
+			ordered.sort(OrderBy);
+        	__renderFilesGrp(ordered);
+		}
+		
+        var sum_files = renderFilesTab();
+        files_label.text( files_label.text() + " " + sum_files );
+
+        $(document).ready(function() {
 
             function handleVisualisationToggle(close) {
 
