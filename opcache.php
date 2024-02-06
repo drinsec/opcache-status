@@ -6,7 +6,7 @@
  * https://github.com/wp-cloud/opcache-status
  *
  * @package OpCacheStatus
- * @version 0.2.1
+ * @version 0.3.0
  * @author WP-Cloud <code@wp-cloud.net>
  * @author Pedro Carvalho <p@goodomens.studio>
  * @copyright Copyright (c) 2016, WP-Cloud
@@ -18,30 +18,48 @@ define('THOUSAND_SEPARATOR',true);
 
 if (!extension_loaded('Zend OPcache')) {
     echo '<div style="background-color: #F2DEDE; color: #B94A48; padding: 1em;">You do not have the Zend OPcache extension loaded, sample data is being shown instead.</div>';
-    require 'data-sample.php';
+    if(file_exists(stream_resolve_include_path('data-sample.php'))) {
+    	require 'data-sample.php';
+    } else {
+    	die();
+    }
 }
 
 class OpCacheDataModel
 {
     private $_configuration;
     private $_status;
+    private $_self_location;
     private $_d3Scripts = array();
+    private $_inc_scripts = [
+    	'd3-3.0.1.min' => [ 
+    		'src' => 'https://cdnjs.cloudflare.com/ajax/libs/d3/3.0.1/d3.v3.min.js',
+    		'integrity' => 'sha512-RDZIrqTWd+SmpRhFvB7tk+lFXRQAajY9mHf3TRh4znTWL6PgjGqW2sIjLB0VYdThNmRatAjcYlz3bkU/YGo8Tw==',
+    		'crossorigin'=> 'anonymous',
+    		'referrerpolicy'=> 'no-referrer'
+    	],
+    	'jquery-1.11.0.min' => [ 
+    		'src' => 'https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.0/jquery.min.js',
+    		'integrity' => 'sha512-h9kKZlwV1xrIcr2LwAPZhjlkx+x62mNwuQK5PAu9d3D+JXMNlGx8akZbqpXvp0vA54rz+DrqYVrzUGDMhwKmwQ==',
+    		'crossorigin'=> 'anonymous',
+    		'referrerpolicy'=> 'no-referrer'
+    	]
+    ];
 
-    public $version = '0.2.1';
+    public $version = '0.3.0';
 
     public function __construct()
     {
         $this->_configuration = opcache_get_configuration();
         $this->_status = opcache_get_status() ?: [];
-        $this->handleFlush();
+        $this->_self_location = $_SERVER['DOCUMENT_URI'];
+        $this->handlePost();
     }
 
     public function getPageTitle()
     {
         return 'PHP ' . phpversion() . " with OpCache {$this->_configuration['version']['version']}";
     }
-
-
 
     public function getStatusDataRows()
     {
@@ -118,7 +136,7 @@ class OpCacheDataModel
         return implode("\n", $rows);
     }
 
-    public function getScriptStatusRows()
+    public function getScriptStatusRowsJs()
     {
         if ( ! $this->has_scripts() ) {
             return;
@@ -142,36 +160,16 @@ class OpCacheDataModel
         }
 
         $this->_d3Scripts = $this->_processPartition($this->_d3Scripts, $basename);
-        $id = 1;
 
-        $rows = array();
+        $rows = [];
         foreach ($dirs as $dir => $files) {
-            $count = count($files);
-            $file_plural = $count > 1 ? 's' : null;
-            $m = 0;
+        	$row = [$dir, []];
             foreach ($files as $file => $data) {
-                $m += $data["memory_consumption"];
+            	$row[1][] = [ $file, $data['hits'], $data['memory_consumption'] ];
             }
-            $m = $this->_size_for_humans($m);
-
-            if ($count > 1) {
-                $rows[] = '<tr>';
-                $rows[] = "<th class=\"clickable\" id=\"head-{$id}\" colspan=\"3\" onclick=\"toggleVisible('#head-{$id}', '#row-{$id}')\">{$dir} ({$count} file{$file_plural}, {$m})</th>";
-                $rows[] = '</tr>';
-            }
-
-            foreach ($files as $file => $data) {
-                $rows[] = "<tr id=\"row-{$id}\">";
-                $rows[] = "<td>" . $this->_format_value($data["hits"]) . "</td>";
-                $rows[] = "<td>" . $this->_size_for_humans($data["memory_consumption"]) . "</td>";
-                $rows[] = $count > 1 ? "<td>{$file}</td>" : "<td>{$dir}/{$file}</td>";
-                $rows[] = '</tr>';
-            }
-
-            ++$id;
+        	$rows[] = $row;
         }
-
-        return implode("\n", $rows);
+        return json_encode($rows);
     }
 
     public function getScriptStatusCount()
@@ -264,6 +262,43 @@ class OpCacheDataModel
     {
         return $this->_d3Scripts;
     }
+    
+	public function secondsToTime($seconds_time)
+	{
+		$days = floor($seconds_time / 86400);
+		if($days > 0) return $days . 'd ' . gmdate('H:i:s', $seconds_time - $days * 86400);
+		return gmdate('H:i:s', $seconds_time);
+	}
+
+    public function getVersionAndUptime()
+    {
+        if ( function_exists('fpm_get_status') ) {
+        	$fpm_status = fpm_get_status();
+        	if( $fpm_status !== false && isset($fpm_status['start-since']) ) {
+        		#return print_r( $fpm_status, 1);
+				return $this->version . ' / Uptime: ' . $this->secondsToTime( $fpm_status['start-since'] );
+        	}
+        }
+
+        return $this->version;
+    }
+
+	public function printScriptTags()
+	{
+		foreach( $this->_inc_scripts as $script => $external ) {
+			$local_src = 'inc/' . $script . '.js';
+			if(file_exists($local_src)) {
+				echo "<script src='{$local_src}'></script>\n";
+			} else {
+				$ret = "<script";
+				foreach( $external as $f => $v ) {
+					$ret .= " {$f}='{$v}'";
+				}
+				$ret .= "></script>\n";
+				echo $ret;
+			}
+		}
+	}
 
     private function _processPartition($value, $name = null)
     {
@@ -366,30 +401,49 @@ class OpCacheDataModel
     /**
      * Flush OpCache and redicted when Action is set to flush.
      */
-    private function handleFlush() {
-        if ( empty( $_POST['action'] ) ) {
+    private function handlePost() {
+    	$action = isset($_POST['action']) ? $_POST['action'] : false;
+        if ( !$action ) {
             return;
         }
-        if ( $_POST['action'] === 'flush' && ! empty( $_SERVER['PHP_SELF'] ) ) {
+        if ( $action === 'flush' ) {
             $flush_status = $this->flushCache();
-            header( 'Location: ' . $_SERVER['PHP_SELF'] . '?flush_status=' . $flush_status );
+            header( 'Location: ' . $this->_self_location . '?flush_status=' . $flush_status );
+            die();
+        } elseif ( $action === 'invalidate' ) {
+        	if( isset($_POST['path']) && function_exists('opcache_invalidate') ) {
+        		$status = opcache_invalidate( $_POST['path'], true );
+        	}
         }
     }
-
 }
 
 $dataModel = new OpCacheDataModel();
-
 ?>
 <!DOCTYPE html>
 <meta charset="utf-8">
 <html>
 <head>
     <style>
+		:root {
+			--color-background: #f9f9f9;
+			--color-background-accent: #eee;
+			--color-default: #000;
+		}
+
+		[data-theme="dark"] {
+			--color-background: #334;
+			--color-background-accent: #555;
+			--color-default: #eee;
+		}
+
         body {
             font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
             margin: 0;
             padding: 0;
+            background: var(--color-background);
+            color: var(--color-default);
+            empty-cells: show;
         }
 
         #container {
@@ -407,7 +461,7 @@ $dataModel = new OpCacheDataModel();
         }
 
         tbody tr:nth-child(even) {
-            background-color: #eee;
+            background: var(--color-background-accent);
         }
 
         p.capitalize {
@@ -425,7 +479,7 @@ $dataModel = new OpCacheDataModel();
         }
 
         .tab label {
-            background: #eee;
+            background: var(--color-background-accent);
             padding: 10px 12px;
             border: 1px solid #ccc;
             margin-left: -1px;
@@ -445,7 +499,7 @@ $dataModel = new OpCacheDataModel();
             position: absolute;
             top: 28px;
             left: 0;
-            background: white;
+            background: var(--color-background);
             border: 1px solid #ccc;
             height: 450px;
             width: 100%;
@@ -464,12 +518,23 @@ $dataModel = new OpCacheDataModel();
             text-align: right;
         }
 
+		.head_expanded {
+            color: #ddd;
+		}
+
         .clickable {
             cursor: pointer;
         }
 
+        .invalidate {
+            padding: 0px;
+            cursor: pointer;
+            background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB8AAAAgCAYAAADqgqNBAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAXlSURBVFhHtZZ7bFNVHMd/59zbd9d2jzL2LnMwytY93GA8JMAMoBHYIIBEjENjTDRGo/EvQ4yJ/qMmGDTRRBIFEzQ8ojzEqMhDVBLYdBmbe7ExoNtAtnXt1vV17z3Hc9sLtGVra5yf5iY9v/P43t/v/s45PwT/gipxpX0S+Wp9KFQeAjHPDUGdCdQiD3hERbleI9W1zBcL205pj04pU2KokVavHUKjh1TAHXfitmeTim8MPmnq4vt3epCvyYuE6iBIagJU6b2PvBB7CTBQ1YAR1MdySda+y/zZrkgvwCJx6bp+bvTbIAh6I9Vcf8RTYU8oPl+qbXKhqbfHUdBGgDBLKoGSXwxBGqgCWdSwrzJk3+1UDS914jvH7oBPF+6jqr46d1nFtKs9FtqS3sH3fXYbTW0VQWKWVETjibxEJtUO+JCY4QfBHFmHMnE1Ey934PC4KKqFVfmtfM/ZQTTJhGfyNj7scjveFpk3hvzz/CAqwrHEWNYKDdY/uN4zLuR3PDg44okGOFFH+T4OUL9IqRsh0LKRBQIipbKIlPTzTOP52AUv6uIGvnShwDTCACbQjNuo5f0FUnbN497llWO4a4OH637ajbu3juPuOodYWFZMMp7PpobLOKH4fe6NKiG1bwwg1wdSXPjkhbKp/vg8KefVi6rTNxTzjNjEh58Y4jwnBCAPfNIIcZ7XCKsL/0YTb0ZCdh/EfrnU+OEt3NGYinCtuKr+Ojd+cGbhWMKDbnFjL0+CkB4f7gJqOjCIr7yuNBOyUdpWf5sbP8E8Y8mVGnh9aLPFh4SnYrOVylukr1qwv6IYErJYWFN0GXUeGQSPIXGyySBZCVMgCN/ghldNgZAXPUk+qeZSyzvHNV9PKKaE+FHQwk4/JpxKtKm8YwI5UraI8kjF3iE0GeUhhQyqvbEiVFl+UnvIqxiTUiotKevBI8yJuMR5EFxCMgf7uJZOyCL280BtFOi8e08ucXyuDPxfQVpS0htA0nylHQ5+PjG95OTaPo1Y/jsLXcu5TGTWyLtHJkhCMMy5CLaCYS6Ez2854SJJx1E8HP4zW6SRle3ma91/mq+2t5r72pvTe9vnGk1XcA7NHNZRzUAW1V+TnzlU7zRRg0eZNiuEkCAnZAHbVcVT7GEBKHZhTy5a492kzSHZmCDZ+4jvXuoNnjIdjhhmgSKp6sWb2PNJ9GbWUu5qsk05K+STii/YLblLaTLkc0T3S1h8gbS4rBePJt0mLGGwg+QOXuF+61RMSVkf2GK8pO7scKNAUfRZkkMNe9GjtxtVzXO62iZQyK7YE2IGdaBYyl7Syl9oV0wJWSjVNV3FI/ujLyx2HUMhsTTgXs7Je0HQKPYkEHY68T41VaV08jUEd5juoIndsRcWBSOohmxS7gXMsWOWhTPZqcSgkA/mqTpi33ZJdSbpDSfTpur5iNUHJdHhlv9bqP6rc+rv3CldfRGQxyqZN53kjp5VDAkpJFV7biJPk9JUoKwoUY/nSdaP5VZK4irApFCy7Gzlf00qvExYW5RDHMeG0MRr8SU2izJYSdq7F1U/OeV2SuIsWbAfB99iu+K5FcI6eVfEsHXyGbVDXFFhI9Xv/cXfbL2FvA3xFZHstZXqv+/nWvYoBkC2kcVaZ6arXUKEfZtE0PCb64H38BT3sKWdhNIARsjCPHwohKSSAEi8PC72G8tQmEMN7YtEW/159alRxZhIfLpFZO56FN0309gIrAZsLZHyN/2u+nFQMYWZJuw07F061V5TDHHIIvFC078kyxXIp2lHqsXS+nhhGcxCFjWTQjpofeW0YPuykKOK1XB7WdXhv9uXGpRJIsiiuoESYt3FasDtP6i/cSudMaDq0dW6jgxnp4BEmwV0vkzJ2NjPt5xW+oElUukEnnphHPyNASQWs8p02teQBdWAQ6wsbjVT/QG7WHzwpOZwwsMo7HURqdrvg9AGG83e0cyd+zncE8e6wGaDkx+u9KJATRCJpQJI1gkQeAuo/azmG9JSdUca1TV38Be7lSlJAPgHlsdypvbne2QAAAAASUVORK5CYII=");
+            background-repeat: no-repeat;
+        }
+
         [type=radio]:checked ~ label {
-            background: white;
+            background-color: var(--color-background);
             border-bottom: 1px solid white;
             z-index: 2;
         }
@@ -568,20 +633,25 @@ $dataModel = new OpCacheDataModel();
         }
 
     </style>
-    <script src="inc/d3-3.0.1.min.js"></script>
-    <script src="inc/jquery-1.11.0.min.js"></script>
+    <?php echo $dataModel->printScriptTags(); ?>
     <script>
         var hidden = {};
         function toggleVisible(head, row) {
-            if (!hidden[row]) {
-                d3.selectAll(row).transition().style('display', 'none');
-                hidden[row] = true;
-                d3.select(head).transition().style('color', '#ccc');
-            } else {
-                d3.selectAll(row).transition().style('display');
-                hidden[row] = false;
-                d3.select(head).transition().style('color', '#000');
-            }
+        	var hide = hidden[row] = !hidden[row];
+        	d3.select(head).classed('head_expanded', hide);
+        	d3.selectAll(row).transition().style('display', hide ? 'none' : null);
+        }
+
+        function invalidate(s) {
+        	$.post( window.location, {action: 'invalidate', path: s}, function( data ) {
+				var newDoc = document.open("text/html", "replace");
+				newDoc.write(data);
+				newDoc.close();
+			});
+        }
+
+        if(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        	document.documentElement.setAttribute("data-theme", "dark");
         }
     </script>
     <title><?php echo $dataModel->getPageTitle(); ?></title>
@@ -589,7 +659,7 @@ $dataModel = new OpCacheDataModel();
 
 <body>
     <div id="container">
-        <span style="float:right;font-size:small;">OPcache Status v<?php echo $dataModel->version; ?></span>
+        <span style="float:right;font-size:small;">OPcache Status v<?php echo $dataModel->getVersionAndUptime(); ?></span>
         <h1><?php echo $dataModel->getPageTitle(); ?></h1>
 
         <div class="tabs">
@@ -614,17 +684,17 @@ $dataModel = new OpCacheDataModel();
                 </div>
             </div>
 
-            <div class="tab">
+            <div class="tab" id="tab-files">
                 <input type="radio" id="tab-scripts" name="tab-group-1">
-                <label for="tab-scripts">Files (<?php echo $dataModel->getScriptStatusCount(); ?>)</label>
+                <label for="tab-scripts">Files</label>
                 <div class="content">
                     <table style="font-size:0.8em;">
                         <tr>
                             <th width="10%">Hits</th>
                             <th width="20%">Memory</th>
                             <th width="70%">Path</th>
+                            <th width="32">-</th>
                         </tr>
-                        <?php echo $dataModel->getScriptStatusRows(); ?>
                     </table>
                 </div>
             </div>
@@ -674,6 +744,7 @@ $dataModel = new OpCacheDataModel();
     <div id="partition"></div>
 
     <script>
+        var dirs = JSON.parse('<?php echo $dataModel->getScriptStatusRowsJs(); ?>');
         var dataset = <?php echo $dataModel->getGraphDataSetJson(); ?>;
 
         var width = 400,
@@ -842,8 +913,47 @@ $dataModel = new OpCacheDataModel();
         function transform(d) {
             return "translate(8," + d.dx * ky / 2 + ")";
         }
+        
+		function fmtSize(b) {
+			if(b >= 1048576) return (b / 1048576).toFixed( 2 ) + " MB";
+			if(b >= 1024) return (b / 1024).toFixed( 1 ) + " kB";
+			return b + " bytes";
+		}
 
         $(document).ready(function() {
+        	var files_tab = $('#tab-files');
+        	var files_table = files_tab.find('TABLE TBODY');
+        	var files_label = files_tab.find('LABEL')
+        	var dirId = 0, sum_files = 0;
+        	for (var e of dirs) {
+        		var dir_sz = 0;
+        		var dir = e[0];
+        		var cnt = e[1].length;
+        		sum_files += cnt;
+        		
+        		for (var f of e[1]) dir_sz += f[2];
+        		if(cnt > 1) {
+        			var th = "<th class='clickable' id='head-" + dirId + "' onclick=\"toggleVisible('#head-" + dirId + "', '#row-" + dirId + "')\"><nobr>";
+        			files_table.append($('<tr>')
+        					.append($(th + " [ " + cnt.toLocaleString() + " files ] " + '</nobr></th>'))
+        					.append($(th + fmtSize(dir_sz) + '</nobr></th>'))
+        					.append($(th + dir + '</nobr></th>'))
+        					.append($("<th class='invalidate' onclick=\"invalidate('" + fullPath + "')\"></th>"))
+					);
+        		}
+        		for (var f of e[1]) {
+        			var file = f[0], hits = f[1], size = f[2];
+        			var fullPath = dir + "/" + file;
+        			files_table.append($('<tr id="row-' + dirId + '">')
+        					.append($('<td>' + hits.toLocaleString() + '</td>'))
+        					.append($('<td>' + fmtSize(size) + '</td>'))
+        					.append($('<td>' + (cnt > 1 ? file : fullPath) + '</td>'))
+        					.append($("<td class='invalidate' onclick=\"invalidate('" + fullPath + "')\"></td>"))
+					);
+        		}
+        		dirId++;
+        	}
+        	files_label.text( files_label.text() + " " + sum_files );
 
             function handleVisualisationToggle(close) {
 
